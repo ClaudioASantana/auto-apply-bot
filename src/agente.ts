@@ -63,8 +63,12 @@ Para CADA site da lista:
 ## FILTRO OBRIGATORIO: pontuar_vaga
 Antes de se candidatar a QUALQUER vaga, SEMPRE use a tool "pontuar_vaga" passando os dados da vaga: tecnologias_pedidas, senioridade, localizacao, modelo_trabalho e, se a vaga mencionar exigencia de ingles, idioma_exigido.
 - A tool retorna: score (1-10), veredicto (APLICAR/PULAR), motivo e eliminatorios.
-- Se veredicto == PULAR (por score < ${scoreMinimo} OU por qualquer eliminatorio): PULE a vaga e va para a proxima. NAO insista.
-- Se veredicto == APLICAR: prossiga com a candidatura.
+- Se veredicto == PULAR (por score < ${scoreMinimo} OU por qualquer eliminatorio): use registrar_vaga_vista e PULE a vaga para a proxima. NAO insista.
+- Se veredicto == APLICAR:
+  1. SEMPRE registre a vaga no radar chamando registrar_vaga_vista com titulo_vaga, empresa, plataforma e score.
+  ${config.requerAprovacao ? `2. O modo Human-in-the-Loop (Aprovacao Manual) esta ATIVO. Use verificar_vaga_aprovada com a URL da vaga:
+     - Se NÃO aprovada: NÃO abra o formulario de candidatura nem preencha nada agora. A vaga ficara salva no Dashboard para aprovacao do candidato. Avance para a proxima vaga da lista!
+     - Se APROVADA: prossiga com o processo de preenchimento da candidatura.` : '2. Prossiga com a candidatura.'}
 - A tool JA considera a cidade, os modelos de trabalho aceitos e o nivel de ingles do candidato (do perfil). Confie no veredicto dela — NAO aplique regras de localizacao manualmente. Se o perfil tiver uma "regra_localizacao" especifica, respeite-a tambem.
 - Ao registrar a candidatura, inclua SEMPRE o score (o sistema recusa registros abaixo do minimo).
 

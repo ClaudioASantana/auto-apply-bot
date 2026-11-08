@@ -58,6 +58,7 @@ function validarEnv(): AgenteConfig {
     delayMax: parseInt(process.env.DELAY_MAX || '5000', 10),
     dryRun: process.env.DRY_RUN === 'true',
     scoreMinimo: parseInt(process.env.SCORE_MINIMO || '6', 10),
+    requerAprovacao: process.env.REQUER_APROVACAO !== 'false',
     custoMaxUsd: parseFloat(process.env.CUSTO_MAX_USD || '0'),
     dashboardPort: parseInt(process.env.DASHBOARD_PORT || '3000', 10),
     // Telegram
@@ -207,6 +208,7 @@ async function main() {
   log('INFO', `CDP: ${config.cdpEndpoint}`);
   log('INFO', `Limite diario: ${config.limiteDiario}`);
   log('INFO', `Score minimo: ${config.scoreMinimo}/10`);
+  log('INFO', `Aprovacao Manual (Human-in-the-Loop): ${config.requerAprovacao ? 'ATIVA (vagas aguardarao aprovacao no Dashboard)' : 'DESATIVADA'}`);
 
   if (config.dryRun) {
     log('WARN', '*** MODO DRY-RUN ATIVO — nenhuma candidatura sera enviada de verdade ***');

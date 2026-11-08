@@ -40,6 +40,8 @@ export function inicializarBanco(dbPath: string = DB_PATH): Database.Database {
     'ALTER TABLE candidaturas ADD COLUMN score INTEGER DEFAULT 0',
     'ALTER TABLE candidaturas ADD COLUMN screenshot_path TEXT',
     "ALTER TABLE candidaturas ADD COLUMN resultado TEXT DEFAULT 'aguardando'",
+    "ALTER TABLE vagas_vistas ADD COLUMN status_aprovacao TEXT DEFAULT 'pendente'",
+    'ALTER TABLE vagas_vistas ADD COLUMN descricao_resumo TEXT',
   ];
   for (const sql of migracoes) {
     try { db.exec(sql); } catch { /* Coluna ja existe */ }
@@ -54,6 +56,8 @@ export function inicializarBanco(dbPath: string = DB_PATH): Database.Database {
       plataforma TEXT,
       score INTEGER DEFAULT 0,
       motivo_pulo TEXT,
+      status_aprovacao TEXT DEFAULT 'pendente',
+      descricao_resumo TEXT,
       data_vista TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     )
   `);
@@ -131,6 +135,19 @@ export function registrarCandidatura(candidatura: Omit<Candidatura, 'id' | 'data
   }
 }
 
+export interface VagaRadar {
+  id: number;
+  url: string;
+  titulo_vaga?: string | null;
+  empresa?: string | null;
+  plataforma?: string | null;
+  score: number;
+  motivo_pulo?: string | null;
+  status_aprovacao: 'pendente' | 'aprovado' | 'descartado' | 'aplicado';
+  descricao_resumo?: string | null;
+  data_vista: string;
+}
+
 export function registrarVagaVista(dados: {
   url: string;
   titulo_vaga?: string;
@@ -138,25 +155,69 @@ export function registrarVagaVista(dados: {
   plataforma?: string;
   score?: number;
   motivo_pulo?: string;
+  status_aprovacao?: 'pendente' | 'aprovado' | 'descartado' | 'aplicado';
+  descricao_resumo?: string;
 }): boolean {
+  if (!db || !db.open) return false;
   try {
+    const scoreVal = dados.score ?? 0;
+    const statusDefault =
+      dados.status_aprovacao ??
+      (scoreVal >= 6 && !dados.motivo_pulo ? 'pendente' : (dados.motivo_pulo ? 'descartado' : 'pendente'));
+
     db.prepare(`
-      INSERT OR IGNORE INTO vagas_vistas (url, titulo_vaga, empresa, plataforma, score, motivo_pulo)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO vagas_vistas (url, titulo_vaga, empresa, plataforma, score, motivo_pulo, status_aprovacao, descricao_resumo)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(url) DO UPDATE SET
+        titulo_vaga = COALESCE(excluded.titulo_vaga, vagas_vistas.titulo_vaga),
+        empresa = COALESCE(excluded.empresa, vagas_vistas.empresa),
+        score = MAX(excluded.score, vagas_vistas.score),
+        motivo_pulo = COALESCE(excluded.motivo_pulo, vagas_vistas.motivo_pulo),
+        status_aprovacao = COALESCE(excluded.status_aprovacao, vagas_vistas.status_aprovacao),
+        descricao_resumo = COALESCE(excluded.descricao_resumo, vagas_vistas.descricao_resumo)
     `).run(
       dados.url,
       dados.titulo_vaga ?? null,
       dados.empresa ?? null,
       dados.plataforma ?? null,
-      dados.score ?? 0,
-      dados.motivo_pulo ?? null
+      scoreVal,
+      dados.motivo_pulo ?? null,
+      statusDefault,
+      dados.descricao_resumo ?? null,
     );
-    // Idempotente: marcar uma vaga já vista de novo é sucesso (não erro).
     return true;
   } catch (error) {
     log('ERRO', `registrarVagaVista falhou: ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
+}
+
+export function listarVagasRadar(limite: number = 100): VagaRadar[] {
+  if (!db || !db.open) return [];
+  return db.prepare(`
+    SELECT * FROM vagas_vistas ORDER BY id DESC LIMIT ?
+  `).all(limite) as VagaRadar[];
+}
+
+export function atualizarStatusAprovacao(id: number, status: 'pendente' | 'aprovado' | 'descartado' | 'aplicado'): boolean {
+  if (!db || !db.open) return false;
+  try {
+    const res = db.prepare('UPDATE vagas_vistas SET status_aprovacao = ? WHERE id = ?').run(status, id);
+    return res.changes > 0;
+  } catch (error) {
+    log('ERRO', `atualizarStatusAprovacao falhou: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+}
+
+export function obterVagasAprovadasParaAplicar(): VagaRadar[] {
+  if (!db || !db.open) return [];
+  return db.prepare(`
+    SELECT * FROM vagas_vistas 
+    WHERE status_aprovacao = 'aprovado' 
+      AND url NOT IN (SELECT url FROM candidaturas WHERE status = 'aplicado')
+    ORDER BY score DESC, id ASC
+  `).all() as VagaRadar[];
 }
 
 export function verificarVagaJaVista(url: string): boolean {

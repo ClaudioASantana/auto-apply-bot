@@ -74,6 +74,7 @@ export interface AgenteConfig {
   delayMax: number;
   dryRun: boolean;
   scoreMinimo: number;
+  requerAprovacao: boolean;
   dashboardPort: number;
   // Circuito de parada por custo (0 = desativado)
   custoMaxUsd: number;

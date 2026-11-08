@@ -9,6 +9,7 @@ import {
   listarCandidaturas,
   registrarVagaVista,
   verificarVagaJaVista,
+  obterVagasAprovadasParaAplicar,
   atualizarScreenshot,
   buscarRespostaCache,
   buscarCandidatasCache,
@@ -95,6 +96,21 @@ export const customToolDeclarations: FunctionDeclaration[] = [
         url: {
           type: Type.STRING,
           description: 'URL completa da vaga para verificar',
+        },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'verificar_vaga_aprovada',
+    description:
+      'Verifica no banco de dados se o usuario APROVOU manualmente esta vaga no Dashboard para que o robo possa preencher a candidatura.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        url: {
+          type: Type.STRING,
+          description: 'URL completa da vaga para checar se foi aprovada pelo usuario no Dashboard',
         },
       },
       required: ['url'],
@@ -598,6 +614,22 @@ export function criarExecutorDeTools(perfil: Perfil, config: AgenteConfig) {
         return jaAplicou
           ? 'JA_APLICOU: O candidato ja se candidatou a esta vaga. Pule para a proxima.'
           : 'NOVA_VAGA: O candidato ainda nao se candidatou. Pode prosseguir.';
+      }
+
+      case 'verificar_vaga_aprovada': {
+        const url = args.url as string;
+        const vagasAprovadas = obterVagasAprovadasParaAplicar();
+        const estaAprovada = vagasAprovadas.some(v => v.url === url);
+        if (estaAprovada) {
+          return JSON.stringify({
+            aprovada: true,
+            instrucao: 'Esta vaga foi APROVADA pelo candidato no Dashboard! Pode prosseguir para a candidatura e preencher o formulario.',
+          });
+        }
+        return JSON.stringify({
+          aprovada: false,
+          instrucao: 'Esta vaga AINDA NAO foi aprovada pelo candidato no Dashboard. Registre-a no radar usando registrar_vaga_vista e PULE o preenchimento por enquanto.',
+        });
       }
 
       case 'registrar_candidatura': {

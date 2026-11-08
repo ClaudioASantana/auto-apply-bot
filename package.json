@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
+    "dashboard": "tsx src/dashboard-standalone.ts",
     "dev": "tsx watch src/index.ts",
     "resultado": "tsx src/marcar-resultado.ts",
     "chrome": "google-chrome --remote-debugging-port=9222",
