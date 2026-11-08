@@ -154,11 +154,18 @@ export function iniciarDashboard(port: number): void {
   if (server) return;
 
   const srv = http.createServer((_req, res) => {
-    res.writeHead(200, {
-      'Content-Type': 'text/html; charset=utf-8',
-      'X-Content-Type-Options': 'nosniff',
-    });
-    res.end(gerarHTML());
+    try {
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      res.end(gerarHTML());
+    } catch {
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+      });
+      res.end('<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Job Bot</title><style>body{background:#0f172a;color:#e2e8f0;font-family:sans-serif;padding:24px;}</style></head><body><h2>Execucao finalizada</h2><p>O banco de dados foi encerrado. Inicie o bot novamente com "npm start" para nova execucao.</p></body></html>');
+    }
   });
 
   // Não derrubar o processo se a porta estiver ocupada.

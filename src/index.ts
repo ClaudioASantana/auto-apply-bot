@@ -185,7 +185,10 @@ async function executarFluxoPrincipal(config: AgenteConfig): Promise<void> {
 
   // Cleanup
   await desconectarMCP();
-  fecharBanco();
+  if (!config.cronAtivo) {
+    pararDashboard();
+    fecharBanco();
+  }
   log('INFO', 'Agente finalizado com sucesso.');
 }
 
@@ -246,9 +249,6 @@ async function main() {
   } else {
     // Execução única
     await executarFluxoPrincipal(config);
-    // Fecha o dashboard para o processo poder encerrar (no modo cron ele
-    // permanece aberto entre execucoes para visualizacao).
-    pararDashboard();
   }
 }
 

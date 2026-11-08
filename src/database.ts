@@ -192,6 +192,16 @@ export function atualizarResultado(id: number, resultado: string): boolean {
 }
 
 export function obterEstatisticas() {
+  if (!db || !db.open) {
+    return {
+      hoje: { total: 0, score_medio: null },
+      total: 0,
+      porPlataforma: [],
+      porStatus: [],
+      porResultado: [],
+    };
+  }
+
   const hoje = db.prepare(`
     SELECT COUNT(*) as total, AVG(score) as score_medio
     FROM candidaturas WHERE date(data_aplicacao) = date('now', 'localtime')
@@ -227,6 +237,7 @@ export function contarCandidaturasHoje(): number {
 }
 
 export function listarCandidaturas(limite: number = 50): Candidatura[] {
+  if (!db || !db.open) return [];
   return db.prepare(`
     SELECT * FROM candidaturas ORDER BY data_aplicacao DESC LIMIT ?
   `).all(limite) as Candidatura[];
