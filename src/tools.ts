@@ -32,6 +32,7 @@ import {
 } from './erros.js';
 import { pontuarVaga } from './scoring.js';
 import { estaNaBlacklist } from './blacklist.js';
+import { sincronizarFreehireNoRadar } from './freehire.js';
 import type { Perfil, RespostasPredefinidas, AgenteConfig } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -580,6 +581,32 @@ export const customToolDeclarations: FunctionDeclaration[] = [
         },
       },
       required: ['nome_recrutador', 'empresa', 'url_perfil', 'mensagem'],
+    },
+  },
+  {
+    name: 'buscar_vagas_freehire',
+    description:
+      'Busca vagas de tecnologia na API publica do Freehire (direto de ATSs internacionais como Greenhouse, Lever, etc.) e as adiciona automaticamente ao Radar do candidato com score e resumo. Use para obter oportunidades remotas ou internacionais de alto calibre.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        termo: {
+          type: Type.STRING,
+          description: 'Termo de busca (ex: "dotnet", "c#", "azure", "fullstack", "ai"). Padrao: "dotnet".',
+        },
+        work_mode: {
+          type: Type.STRING,
+          description: 'Modo de trabalho: "remote", "hybrid" ou "onsite". Padrao: "remote".',
+        },
+        seniority: {
+          type: Type.STRING,
+          description: 'Senioridade: "senior", "lead", "mid". Padrao: "senior".',
+        },
+        limite: {
+          type: Type.NUMBER,
+          description: 'Quantidade maxima de vagas a buscar (1 a 30). Padrao: 10.',
+        },
+      },
     },
   },
 ];
@@ -1239,6 +1266,31 @@ export function criarExecutorDeTools(perfil: Perfil, config: AgenteConfig) {
           const msg = error instanceof Error ? error.message : String(error);
           log('ERRO', `Falha no curriculo tailored: ${msg}`);
           return `ERRO: ${msg}. Use escolher_curriculo como fallback.`;
+        }
+      }
+
+      case 'buscar_vagas_freehire': {
+        const termo = (args.termo as string) || 'dotnet';
+        const work_mode = (args.work_mode as 'remote' | 'hybrid' | 'onsite') || 'remote';
+        const seniority = (args.seniority as 'senior' | 'mid' | 'junior' | 'lead') || 'senior';
+        const limite = Math.min((args.limite as number) || 10, 30);
+
+        try {
+          const resultado = await sincronizarFreehireNoRadar(
+            { query: termo, work_mode, seniority, limit: limite },
+            perfil,
+            config.scoreMinimo || 6
+          );
+          return JSON.stringify({
+            sucesso: true,
+            total_buscadas: resultado.total,
+            vagas_ineditas: resultado.novas,
+            adicionadas_ao_radar: resultado.adicionadasRadar,
+            mensagem: `${resultado.adicionadasRadar} nova(s) vaga(s) com score alto foram adicionadas ao Radar de Oportunidades e aguardam aprovacao manual no Dashboard.`,
+          });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return `ERRO ao buscar no Freehire: ${msg}`;
         }
       }
 

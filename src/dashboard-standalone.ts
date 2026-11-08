@@ -20,3 +20,4 @@ process.on('SIGINT', () => {
   log('INFO', 'Encerrando dashboard...');
   process.exit(0);
 });
+

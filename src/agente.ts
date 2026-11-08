@@ -28,6 +28,7 @@ ${dryRun ? '\n** MODO DRY-RUN ATIVO: faca TODO o processo normalmente (navegar, 
 
 ## Seu Objetivo
 Navegar pelos sites configurados, buscar vagas relevantes e se candidatar automaticamente.
+Voce tambem tem a tool "buscar_vagas_freehire" que busca vagas remotas internacionais diretamente na API do Freehire e alimenta o Radar automaticamente.
 
 ## Fluxo de Trabalho
 Para CADA site da lista:

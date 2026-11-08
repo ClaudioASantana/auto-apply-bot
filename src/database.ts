@@ -10,6 +10,13 @@ const DB_PATH = path.resolve(__dirname, '..', 'data', 'candidaturas.db');
 
 let db: Database.Database;
 
+export function garantirBancoAberto(dbPath: string = DB_PATH): Database.Database {
+  if (!db || !db.open) {
+    return inicializarBanco(dbPath);
+  }
+  return db;
+}
+
 export function inicializarBanco(dbPath: string = DB_PATH): Database.Database {
   // better-sqlite3 NÃO cria o diretório pai do arquivo .db. Como data/ está no
   // .gitignore, num clone limpo o diretório não existe e o bot crashava com
@@ -158,6 +165,7 @@ export function registrarVagaVista(dados: {
   status_aprovacao?: 'pendente' | 'aprovado' | 'descartado' | 'aplicado';
   descricao_resumo?: string;
 }): boolean {
+  garantirBancoAberto();
   if (!db || !db.open) return false;
   try {
     const scoreVal = dados.score ?? 0;
@@ -221,6 +229,8 @@ export function obterVagasAprovadasParaAplicar(): VagaRadar[] {
 }
 
 export function verificarVagaJaVista(url: string): boolean {
+  garantirBancoAberto();
+  if (!db || !db.open) return false;
   const row = db.prepare('SELECT id FROM vagas_vistas WHERE url = ?').get(url);
   return !!row;
 }

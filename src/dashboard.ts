@@ -1,4 +1,7 @@
 import http from 'http';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { readFileSync, existsSync } from 'fs';
 import {
   listarCandidaturas,
   obterEstatisticas,
@@ -7,6 +10,37 @@ import {
   type VagaRadar,
 } from './database.js';
 import { log } from './logger.js';
+import { sincronizarFreehireNoRadar } from './freehire.js';
+import type { Perfil } from './types.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function carregarPerfilDashboard(): Perfil {
+  try {
+    const caminho = path.resolve(__dirname, '..', 'config', 'perfil.json');
+    if (existsSync(caminho)) {
+      return JSON.parse(readFileSync(caminho, 'utf-8')) as Perfil;
+    }
+  } catch {}
+  return {
+    nome: 'Candidato',
+    email: '',
+    telefone: '',
+    linkedin: '',
+    github: '',
+    portfolio: '',
+    curriculo_path: '',
+    titulo_profissional: 'Desenvolvedor Backend .NET Sênior',
+    anos_experiencia: 15,
+    stack_principal: ['.NET', 'C#', 'Azure', 'SQL Server'],
+    resumo_profissional: '.NET C# Azure',
+    pretensao_salarial: 'A combinar',
+    modelo_trabalho: ['remoto', 'hibrido'],
+    cidade: 'Rio de Janeiro',
+    disponibilidade: 'Imediata',
+    palavras_chave_busca: ['.NET', 'C#'],
+  };
+}
 
 let server: http.Server | null = null;
 
@@ -142,6 +176,8 @@ function gerarHTML(): string {
   .btn-approve { background: #059669; color: #ffffff; }
   .btn-discard { background: #475569; color: #cbd5e1; }
   .btn-undo { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 4px 8px; font-size: 11px; }
+  .btn-sync { background: linear-gradient(135deg, #0284c7, #2563eb); color: #ffffff; padding: 8px 14px; font-size: 12px; font-weight: bold; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+  .btn-sync:hover { filter: brightness(1.1); }
 
   .badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-block; }
   .badge-approved { background: #064e3b; color: #6ee7b7; border: 1px solid #059669; }
@@ -194,6 +230,8 @@ function gerarHTML(): string {
     <button class="filter-btn active" onclick="filtrar('todas')">Todas (${totalRadar})</button>
     <button class="filter-btn" onclick="filtrar('pendente')">Aguardando Aprovação (${pendentesCount})</button>
     <button class="filter-btn" onclick="filtrar('aprovado')">Aprovadas (${aprovadasCount})</button>
+    <div style="flex: 1;"></div>
+    <button class="btn btn-sync" onclick="sincronizarFreehire()" id="btn-sync" title="Consulta a API do Freehire para vagas remotas de .NET/C# e atualiza o radar">⚡ Sincronizar Vagas Remotas (.NET Internacional)</button>
   </div>
 
   ${radarVagas.length > 0 ? `
@@ -277,6 +315,29 @@ function gerarHTML(): string {
       });
     }
 
+    async function sincronizarFreehire() {
+      const btn = document.getElementById('btn-sync');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.innerText = '⏳ Consultando Freehire...';
+      try {
+        const resp = await fetch('/api/freehire/sync', { method: 'POST' });
+        const data = await resp.json();
+        if (data.sucesso) {
+          mostrarToast('✅ ' + data.adicionadasRadar + ' nova(s) vaga(s) com alto match adicionada(s) ao Radar!');
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          mostrarToast('Erro ao sincronizar: ' + (data.erro || 'Falha'));
+          btn.disabled = false;
+          btn.innerText = '⚡ Sincronizar Vagas Remotas (.NET Internacional)';
+        }
+      } catch (err) {
+        mostrarToast('Erro ao conectar ao servidor: ' + err.message);
+        btn.disabled = false;
+        btn.innerText = '⚡ Sincronizar Vagas Remotas (.NET Internacional)';
+      }
+    }
+
     // Auto-refresh a cada 40 segundos se não houver interação recente
     let autoRefresh = setTimeout(() => { location.reload(); }, 40000);
     document.addEventListener('click', () => {
@@ -307,6 +368,24 @@ export function iniciarDashboard(port: number): void {
           res.end(JSON.stringify({ sucesso: false, erro: String(err) }));
         }
       });
+      return;
+    }
+
+    // Rota da API para sincronizar vagas do Freehire
+    if (req.method === 'POST' && req.url === '/api/freehire/sync') {
+      try {
+        const perfil = carregarPerfilDashboard();
+        const resultado = await sincronizarFreehireNoRadar(
+          { query: 'dotnet', work_mode: 'remote', seniority: 'senior', limit: 15 },
+          perfil,
+          6
+        );
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ sucesso: true, ...resultado }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ sucesso: false, erro: String(err) }));
+      }
       return;
     }
 
