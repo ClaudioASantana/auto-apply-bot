@@ -1052,7 +1052,7 @@ export function criarExecutorDeTools(perfil: Perfil, config: AgenteConfig) {
           });
         }
 
-        if (!geminiApiKey || !geminiModel) {
+        if (config.llmProvider === 'gemini' && (!geminiApiKey || !geminiModel)) {
           return 'ERRO: Configuracao do Gemini nao disponivel para gerar mensagem.';
         }
 
@@ -1147,7 +1147,7 @@ export function criarExecutorDeTools(perfil: Perfil, config: AgenteConfig) {
         const empresa = args.empresa as string;
         const titulo = args.titulo_vaga as string;
 
-        if (!geminiApiKey || !geminiModel) {
+        if (config.llmProvider === 'gemini' && (!geminiApiKey || !geminiModel)) {
           return 'ERRO: Configuracao do Gemini nao disponivel para gerar cover letter.';
         }
 
@@ -1181,7 +1181,7 @@ export function criarExecutorDeTools(perfil: Perfil, config: AgenteConfig) {
         const titulo = (args.titulo_vaga as string) || '';
         const empresa = (args.empresa as string) || '';
 
-        if (!geminiApiKey || !geminiModel) {
+        if (config.llmProvider === 'gemini' && (!geminiApiKey || !geminiModel)) {
           log('ERRO', 'Curriculo tailored: API key ou modelo nao configurados');
           return 'ERRO: Configuracao do Gemini nao disponivel. Use escolher_curriculo como fallback.';
         }
@@ -1214,4 +1214,71 @@ export function criarExecutorDeTools(perfil: Perfil, config: AgenteConfig) {
         return `ERRO: Tool "${name}" nao reconhecida.`;
     }
   };
+}
+
+/**
+ * Converte recursivamente os tipos do enum do Gemini (ex: "STRING", "OBJECT") para minúsculas ("string", "object")
+ * para compatibilidade total com JSON Schema / OpenAI tool definitions.
+ */
+function normalizarJsonSchema(schema: unknown): unknown {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (Array.isArray(schema)) return schema.map(normalizarJsonSchema);
+
+  const obj = { ...(schema as Record<string, unknown>) };
+  if (typeof obj.type === 'string') {
+    obj.type = obj.type.toLowerCase();
+  }
+  if (obj.properties && typeof obj.properties === 'object') {
+    const props: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj.properties as Record<string, unknown>)) {
+      props[k] = normalizarJsonSchema(v);
+    }
+    obj.properties = props;
+  }
+  if (obj.items) {
+    obj.items = normalizarJsonSchema(obj.items);
+  }
+  return obj;
+}
+
+export interface OpenAIToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: unknown;
+  };
+}
+
+export function obterOpenAITools(
+  mcpTools: Array<{ name: string; description?: string; inputSchema?: unknown }> = [],
+): OpenAIToolDefinition[] {
+  const tools: OpenAIToolDefinition[] = [];
+
+  // Tools do MCP Playwright (browser_*)
+  for (const t of mcpTools) {
+    tools.push({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: normalizarJsonSchema(t.inputSchema || { type: 'object', properties: {} }),
+      },
+    });
+  }
+
+  // Tools customizadas do bot (obter_perfil_candidato, etc.)
+  for (const ct of customToolDeclarations) {
+    if (!ct.name) continue;
+    tools.push({
+      type: 'function',
+      function: {
+        name: ct.name,
+        description: ct.description,
+        parameters: normalizarJsonSchema(ct.parameters || { type: 'object', properties: {} }),
+      },
+    });
+  }
+
+  return tools;
 }

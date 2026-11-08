@@ -29,16 +29,28 @@ function carregarConfig<T>(arquivo: string): T {
 }
 
 function validarEnv(): AgenteConfig {
-  const geminiApiKey = process.env.GEMINI_API_KEY;
-  if (!geminiApiKey) {
+  const rawProvider = (process.env.LLM_PROVIDER || '').toLowerCase();
+  const llmProvider: 'gemini' | 'openai' =
+    rawProvider === 'openai' || rawProvider === 'omniroute' || (!process.env.GEMINI_API_KEY)
+      ? 'openai'
+      : 'gemini';
+
+  const geminiApiKey = process.env.GEMINI_API_KEY || '';
+  if (llmProvider === 'gemini' && !geminiApiKey) {
     console.error('\nERRO: GEMINI_API_KEY nao definida.');
-    console.error('Copie .env.example para .env e preencha sua chave.\n');
+    console.error('Para usar o Google Gemini, defina GEMINI_API_KEY.');
+    console.error('Para usar o OmniRoute ou API OpenAI-compatible, defina LLM_PROVIDER=openai e OPENAI_BASE_URL.\n');
     process.exit(1);
   }
 
+  const openaiBaseUrl = process.env.OPENAI_BASE_URL || 'http://192.168.1.10:20130/v1';
+  const openaiModel = process.env.OPENAI_MODEL || 'auto/smart';
+
   return {
+    llmProvider,
     geminiApiKey,
     geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    openaiModel,
     cdpEndpoint: process.env.CDP_ENDPOINT || 'http://127.0.0.1:9222',
     limiteDiario: parseInt(process.env.LIMITE_DIARIO || '10', 10),
     maxPorExecucao: parseInt(process.env.MAX_POR_EXECUCAO || '5', 10),
@@ -61,11 +73,11 @@ function validarEnv(): AgenteConfig {
     cronAtivo: process.env.CRON_ATIVO === 'true',
     cronHorario: process.env.CRON_HORARIO || '09:00',
     // Multi-LLM
-    llmAuxProvider: process.env.LLM_AUX_PROVIDER || 'gemini',
-    llmAuxModel: process.env.LLM_AUX_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    llmAuxProvider: process.env.LLM_AUX_PROVIDER || (llmProvider === 'openai' ? 'openai' : 'gemini'),
+    llmAuxModel: process.env.LLM_AUX_MODEL || (llmProvider === 'openai' ? openaiModel : (process.env.GEMINI_MODEL || 'gemini-2.5-flash')),
     ollamaUrl: process.env.OLLAMA_URL || 'http://localhost:11434',
     openaiApiKey: process.env.OPENAI_API_KEY || '',
-    openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+    openaiBaseUrl,
   };
 }
 
@@ -187,7 +199,8 @@ async function main() {
 
   // Valida ambiente
   const config = validarEnv();
-  log('INFO', `Modelo: ${config.geminiModel}`);
+  log('INFO', `Provider LLM: ${config.llmProvider.toUpperCase()}`);
+  log('INFO', `Modelo: ${config.llmProvider === 'openai' ? config.openaiModel : config.geminiModel}`);
   log('INFO', `CDP: ${config.cdpEndpoint}`);
   log('INFO', `Limite diario: ${config.limiteDiario}`);
   log('INFO', `Score minimo: ${config.scoreMinimo}/10`);

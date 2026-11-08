@@ -3,7 +3,7 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { customToolDeclarations, criarExecutorDeTools } from './tools.js';
+import { customToolDeclarations, criarExecutorDeTools, obterOpenAITools } from './tools.js';
 import { podarHistorico } from './historico.js';
 import { log } from './logger.js';
 import { classificarErroAPI, calcularBackoffRateLimit, MAX_TENTATIVAS } from './erros.js';
@@ -250,12 +250,263 @@ export function construirConfigGeracao(
   };
 }
 
+interface OpenAIToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | null;
+  tool_calls?: OpenAIToolCall[];
+  tool_call_id?: string;
+}
+
+function podarHistoricoOpenAI(msgs: OpenAIMessage[], max: number): OpenAIMessage[] {
+  if (msgs.length <= max) return msgs.slice();
+  const fixas = msgs.slice(0, 2);
+  let corte = msgs.length - max + fixas.length;
+  while (corte < msgs.length && msgs[corte]?.role === 'tool') {
+    corte++;
+  }
+  return [...fixas, ...msgs.slice(corte)];
+}
+
+async function executarAgenteOpenAI(
+  mcpClient: Client,
+  perfil: Perfil,
+  sites: SitesConfig,
+  config: AgenteConfig,
+): Promise<string> {
+  const executarTool = criarExecutorDeTools(perfil, config);
+  const systemPrompt = buildSystemPrompt(perfil, sites, config);
+
+  const sitesAtivos = sites.sites.filter(s => s.ativo);
+  if (sitesAtivos.length === 0) {
+    return 'Nenhum site ativo configurado em sites.json. Adicione sites e tente novamente.';
+  }
+
+  log('AGENTE', `Iniciando agente OpenAI-compat (OmniRoute) com ${sitesAtivos.length} site(s) ativo(s)`);
+  log('AGENTE', `Endpoint: ${config.openaiBaseUrl}`);
+  log('AGENTE', `Modelo: ${config.openaiModel}`);
+  log('AGENTE', `Limite diario: ${config.limiteDiario} candidaturas`);
+
+  const mcpToolsRes = await mcpClient.listTools();
+  const toolsOpenAI = obterOpenAITools(mcpToolsRes.tools || []);
+
+  const estadoRecuperado = carregarRecovery();
+  let avisoRecovery = '';
+  if (estadoRecuperado) {
+    log('AGENTE', `Estado anterior encontrado: ${estadoRecuperado.iteracao} iteracao(oes), ultimo site: ${estadoRecuperado.ultimoSite}`);
+    avisoRecovery = `\n\nATENCAO: uma execucao anterior foi interrompida (ultimo site: ${estadoRecuperado.ultimoSite}). As vagas ja vistas/aplicadas estao registradas no banco e serao puladas — use verificar_vaga_ja_vista e verificar_ja_aplicou normalmente para continuar de onde parou.`;
+  }
+
+  const mensagemInicial = (`
+Inicie o processo de candidatura. Comece pelo primeiro site da lista.
+Lembre-se: use aguardar entre cada acao, verifique duplicatas, e varie as respostas.
+` + avisoRecovery).trim();
+
+  let messages: OpenAIMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: mensagemInicial },
+  ];
+
+  let iteracao = 0;
+  let respostaFinal = '';
+  let errosConsecutivos = 0;
+  let saiuComErroFatal = false;
+
+  while (iteracao < MAX_ITERACOES) {
+    iteracao++;
+    log('AGENTE', `Iteracao ${iteracao}/${MAX_ITERACOES}`);
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (config.openaiApiKey) {
+        headers['Authorization'] = `Bearer ${config.openaiApiKey}`;
+      }
+
+      const res = await fetch(`${config.openaiBaseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: config.openaiModel,
+          messages,
+          tools: toolsOpenAI,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`OpenAI/OmniRoute erro ${res.status}: ${errorText}`);
+      }
+
+      const data = (await res.json()) as {
+        choices?: Array<{
+          message?: {
+            role: string;
+            content?: string | null;
+            tool_calls?: OpenAIToolCall[];
+          };
+        }>;
+        usage?: {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+        };
+      };
+
+      errosConsecutivos = 0;
+
+      if (data.usage) {
+        registrarUsoTokens(
+          config.openaiModel,
+          {
+            promptTokenCount: data.usage.prompt_tokens,
+            candidatesTokenCount: data.usage.completion_tokens,
+            totalTokenCount: data.usage.total_tokens,
+          },
+          'agente',
+        );
+      }
+
+      if (config.custoMaxUsd > 0 && obterCustoTotal() > config.custoMaxUsd) {
+        log('AGENTE', `Custo maximo atingido ($${obterCustoTotal().toFixed(4)} > $${config.custoMaxUsd} USD). Finalizando.`);
+        respostaFinal = `Execucao interrompida: custo maximo de $${config.custoMaxUsd} USD atingido.`;
+        break;
+      }
+
+      const choice = data.choices?.[0]?.message;
+      if (!choice) {
+        log('AGENTE', 'Resposta vazia do modelo. Finalizando.');
+        break;
+      }
+
+      messages.push({
+        role: 'assistant',
+        content: choice.content || null,
+        tool_calls: choice.tool_calls,
+      });
+
+      const functionCalls = choice.tool_calls;
+      if (!functionCalls || functionCalls.length === 0) {
+        const textoFinal = choice.content || '';
+        log('AGENTE', `Resposta final do modelo:\n${textoFinal}`);
+        respostaFinal = textoFinal;
+        limparRecovery();
+        break;
+      }
+
+      log('AGENTE', `Executando ${functionCalls.length} tool(s) em sequencia...`);
+
+      for (const tc of functionCalls) {
+        const toolName = tc.function.name;
+        let toolArgs: Record<string, unknown> = {};
+        try {
+          toolArgs = (tc.function.arguments ? JSON.parse(tc.function.arguments) : {}) as Record<string, unknown>;
+        } catch {
+          toolArgs = {};
+        }
+
+        log('TOOL', `${toolName}(${JSON.stringify(toolArgs).substring(0, 100)}...)`);
+
+        let resultado: string;
+        try {
+          if (customToolDeclarations.some(t => t.name === toolName)) {
+            resultado = await executarTool(toolName, toolArgs);
+          } else {
+            const mcpResult = await mcpClient.callTool({
+              name: toolName,
+              arguments: toolArgs,
+            });
+
+            const content = mcpResult.content as Array<{ type: string; text?: string }> | undefined;
+            resultado = content
+              ?.map(c => (c.type === 'text' ? c.text : JSON.stringify(c)))
+              .join('\n') || 'OK';
+          }
+        } catch (toolError) {
+          resultado = `ERRO_TOOL: ${toolError instanceof Error ? toolError.message : String(toolError)}`;
+          log('ERRO', `Tool ${toolName} falhou: ${resultado}`);
+        }
+
+        log('TOOL', `Resultado: ${resultado.substring(0, 150)}...`);
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: resultado,
+        });
+      }
+
+      if (messages.length > MAX_HISTORICO) {
+        const antes = messages.length;
+        messages = podarHistoricoOpenAI(messages, MAX_HISTORICO);
+        log('AGENTE', `Sliding window: ${antes - messages.length} mensagens antigas descartadas (historico: ${messages.length})`);
+      }
+
+      if (iteracao % 5 === 0) {
+        salvarRecovery(iteracao, sitesAtivos.map(s => s.nome));
+      }
+    } catch (error) {
+      const mensagemErro = error instanceof Error ? error.message : String(error);
+      log('ERRO', `Erro na iteracao ${iteracao}: ${mensagemErro}`);
+
+      const tipoErro = classificarErroAPI(mensagemErro);
+
+      if (tipoErro === 'rate_limit') {
+        errosConsecutivos++;
+        const backoff = calcularBackoffRateLimit(errosConsecutivos);
+        log('AGENTE', `Rate limit atingido (${errosConsecutivos}x). Aguardando ${Math.round(backoff / 1000)}s...`);
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        continue;
+      }
+
+      if (tipoErro === 'rede') {
+        errosConsecutivos++;
+        if (errosConsecutivos <= MAX_TENTATIVAS) {
+          const backoff = 5000 * Math.pow(2, errosConsecutivos - 1);
+          log('AGENTE', `Erro de rede (${errosConsecutivos}/${MAX_TENTATIVAS}). Retentando em ${Math.round(backoff / 1000)}s...`);
+          await new Promise(resolve => setTimeout(resolve, backoff));
+          continue;
+        }
+        log('AGENTE', `Erro de rede persistente apos ${errosConsecutivos} tentativas. Finalizando.`);
+      }
+
+      salvarRecovery(iteracao, sitesAtivos.map(s => s.nome));
+      respostaFinal = `Erro durante execucao: ${mensagemErro}`;
+      saiuComErroFatal = true;
+      break;
+    }
+  }
+
+  if (iteracao >= MAX_ITERACOES) {
+    respostaFinal = `Agente atingiu o limite maximo de ${MAX_ITERACOES} iteracoes.`;
+  }
+
+  if (!saiuComErroFatal) {
+    limparRecovery();
+  }
+  log('AGENTE', `Finalizado apos ${iteracao} iteracoes.`);
+  return respostaFinal;
+}
+
 export async function executarAgente(
   mcpClient: Client,
   perfil: Perfil,
   sites: SitesConfig,
   config: AgenteConfig,
 ): Promise<string> {
+  if (config.llmProvider === 'openai') {
+    return await executarAgenteOpenAI(mcpClient, perfil, sites, config);
+  }
+
   const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
   const executarTool = criarExecutorDeTools(perfil, config);
   const systemPrompt = buildSystemPrompt(perfil, sites, config);

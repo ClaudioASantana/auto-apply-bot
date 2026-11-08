@@ -63,8 +63,10 @@ export interface Candidatura {
 }
 
 export interface AgenteConfig {
+  llmProvider: 'gemini' | 'openai';
   geminiApiKey: string;
   geminiModel: string;
+  openaiModel: string;
   cdpEndpoint: string;
   limiteDiario: number;
   maxPorExecucao: number;

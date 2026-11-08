@@ -40,6 +40,17 @@ const PRICING: Record<string, ModelPricing> = {
     outputPer1M: 0,
     cachedPer1M: 0,
   },
+  // OmniRoute self-hosted local — custo zero
+  'auto/': {
+    inputPer1M: 0,
+    outputPer1M: 0,
+    cachedPer1M: 0,
+  },
+  omniroute: {
+    inputPer1M: 0,
+    outputPer1M: 0,
+    cachedPer1M: 0,
+  },
 };
 
 // Fallback para modelos não listados (usa pricing do 2.5 pro)
