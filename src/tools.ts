@@ -606,6 +606,10 @@ export const customToolDeclarations: FunctionDeclaration[] = [
           type: Type.NUMBER,
           description: 'Quantidade maxima de vagas a buscar (1 a 30). Padrao: 10.',
         },
+        apenas_freelance: {
+          type: Type.BOOLEAN,
+          description: 'Se verdadeiro, filtra apenas contratos por projeto, freelance ou B2B. Padrao: false.',
+        },
       },
     },
   },
@@ -1273,11 +1277,12 @@ export function criarExecutorDeTools(perfil: Perfil, config: AgenteConfig) {
         const termo = (args.termo as string) || 'dotnet';
         const work_mode = (args.work_mode as 'remote' | 'hybrid' | 'onsite') || 'remote';
         const seniority = (args.seniority as 'senior' | 'mid' | 'junior' | 'lead') || 'senior';
+        const apenasFreelance = Boolean(args.apenas_freelance);
         const limite = Math.min((args.limite as number) || 10, 30);
 
         try {
           const resultado = await sincronizarFreehireNoRadar(
-            { query: termo, work_mode, seniority, limit: limite },
+            { query: termo, work_mode, seniority, apenasFreelance, limit: limite },
             perfil,
             config.scoreMinimo || 6
           );

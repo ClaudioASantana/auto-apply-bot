@@ -115,4 +115,60 @@ describe('Integracao Freehire.me', () => {
 
     vi.restoreAllMocks();
   });
+
+  it('suporta filtro e marcacao de vagas freelance / contrato B2B', async () => {
+    const mockFreelanceJobs = [
+      {
+        public_slug: 'csharp-b2b-contract',
+        source: 'justjoin',
+        url: 'https://justjoin.it/job-offer/csharp-b2b',
+        title: 'C# / .NET Backend Developer (B2B Contract)',
+        company: 'GlobalSoft',
+        work_mode: 'remote',
+        engagement: ['b2b'],
+        skills: ['dotnet', 'csharp', 'azure', 'sql server'],
+        enrichment: {
+          summary: 'Long Term B2B Contract, Rate: 50-70 USD/h',
+          seniority: 'pleno',
+          employment_type: 'contract',
+          salary_min: 50,
+          salary_max: 70,
+          salary_currency: 'USD',
+          salary_period: 'hour',
+        },
+      },
+    ];
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (info) => {
+      const urlStr = String(info);
+      expect(urlStr).toContain('employment_type=contract');
+      return {
+        ok: true,
+        json: async () => ({
+          data: mockFreelanceJobs,
+          meta: { limit: 10, offset: 0, total: 1 },
+        }),
+      } as Response;
+    });
+
+    vi.spyOn(db, 'verificarVagaJaVista').mockReturnValue(false);
+    const registrarSpy = vi.spyOn(db, 'registrarVagaVista').mockReturnValue(true);
+
+    const res = await sincronizarFreehireNoRadar(
+      { query: 'dotnet', work_mode: 'remote', apenasFreelance: true },
+      perfilMock,
+      5
+    );
+
+    expect(res.adicionadasRadar).toBe(1);
+    expect(registrarSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plataforma: expect.stringContaining('[Freelance]'),
+        descricao_resumo: expect.stringContaining('FREELANCE/CONTRATO'),
+      })
+    );
+
+    fetchSpy.mockRestore();
+    vi.restoreAllMocks();
+  });
 });

@@ -65,10 +65,18 @@ function gerarHTML(): string {
 
   const pendentesCount = radarVagas.filter(v => v.status_aprovacao === 'pendente' && v.score >= 6).length;
   const aprovadasCount = radarVagas.filter(v => v.status_aprovacao === 'aprovado').length;
+  const freelanceCount = radarVagas.filter(v =>
+    (v.plataforma && v.plataforma.includes('Freelance')) ||
+    (v.descricao_resumo && (v.descricao_resumo.includes('FREELANCE') || v.descricao_resumo.includes('/h') || v.descricao_resumo.includes('B2B')))
+  ).length;
   const totalRadar = radarVagas.length;
 
   const linhasRadar = radarVagas.map(v => {
     const scoreClass = v.score >= 7 ? 'high' : v.score >= 5 ? 'mid' : 'low';
+    const ehFreelance =
+      (v.plataforma && v.plataforma.includes('Freelance')) ||
+      (v.descricao_resumo && (v.descricao_resumo.includes('FREELANCE') || v.descricao_resumo.includes('/h') || v.descricao_resumo.includes('B2B')));
+
     let acoesHtml = '';
 
     if (v.status_aprovacao === 'pendente') {
@@ -90,15 +98,21 @@ function gerarHTML(): string {
       acoesHtml = `<span class="badge badge-applied">Aplicada</span>`;
     }
 
-    const motivoHtml = v.motivo_pulo ? `<div class="sub-info">${escaparHtml(v.motivo_pulo)}</div>` : '';
+    const motivoHtml = v.motivo_pulo ? `<div class="sub-info" style="color: #f87171;">${escaparHtml(v.motivo_pulo)}</div>` : '';
+    const resumoHtml = v.descricao_resumo ? `<div class="sub-info" style="color: #94a3b8; margin-top: 4px;">${escaparHtml(v.descricao_resumo)}</div>` : '';
+    const tagFreelance = ehFreelance ? `<span class="badge badge-freelance">Freelance/B2B</span>` : '';
 
     return `
-      <tr class="radar-row status-${v.status_aprovacao}">
+      <tr class="radar-row status-${v.status_aprovacao} ${ehFreelance ? 'is-freelance' : ''}">
         <td>${escaparHtml(v.data_vista)}</td>
-        <td><span class="platform-tag">${escaparHtml(v.plataforma || 'Web')}</span></td>
+        <td>
+          <span class="platform-tag">${escaparHtml(v.plataforma || 'Web')}</span>
+          ${tagFreelance}
+        </td>
         <td><strong>${escaparHtml(v.empresa || 'Empresa')}</strong></td>
         <td>
           <div class="job-title">${escaparHtml(v.titulo_vaga || 'Vaga identificada')}</div>
+          ${resumoHtml}
           ${motivoHtml}
         </td>
         <td><span class="score ${scoreClass}">${v.score}</span></td>
@@ -178,11 +192,14 @@ function gerarHTML(): string {
   .btn-undo { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 4px 8px; font-size: 11px; }
   .btn-sync { background: linear-gradient(135deg, #0284c7, #2563eb); color: #ffffff; padding: 8px 14px; font-size: 12px; font-weight: bold; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
   .btn-sync:hover { filter: brightness(1.1); }
+  .btn-freelance { background: linear-gradient(135deg, #7c3aed, #9333ea); color: #ffffff; padding: 8px 14px; font-size: 12px; font-weight: bold; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); margin-right: 8px; }
+  .btn-freelance:hover { filter: brightness(1.1); }
 
   .badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-block; }
   .badge-approved { background: #064e3b; color: #6ee7b7; border: 1px solid #059669; }
   .badge-discarded { background: #1e293b; color: #64748b; border: 1px solid #334155; }
   .badge-applied { background: #1e3a8a; color: #93c5fd; border: 1px solid #2563eb; }
+  .badge-freelance { background: #4c1d95; color: #c4b5fd; border: 1px solid #7c3aed; margin-left: 6px; font-size: 11px; }
 
   .status { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
   .status.aplicado { background: #166534; color: #4ade80; }
@@ -230,8 +247,10 @@ function gerarHTML(): string {
     <button class="filter-btn active" onclick="filtrar('todas')">Todas (${totalRadar})</button>
     <button class="filter-btn" onclick="filtrar('pendente')">Aguardando Aprovação (${pendentesCount})</button>
     <button class="filter-btn" onclick="filtrar('aprovado')">Aprovadas (${aprovadasCount})</button>
+    <button class="filter-btn" onclick="filtrar('freelance')">💼 Freelance / B2B (${freelanceCount})</button>
     <div style="flex: 1;"></div>
-    <button class="btn btn-sync" onclick="sincronizarFreehire()" id="btn-sync" title="Consulta a API do Freehire para vagas remotas de .NET/C# e atualiza o radar">⚡ Sincronizar Vagas Remotas (.NET Internacional)</button>
+    <button class="btn btn-freelance" onclick="sincronizarFreehire(true)" id="btn-sync-freelance" title="Busca contratos freelance / B2B de .NET no Freehire">💼 Sincronizar Freelance (.NET)</button>
+    <button class="btn btn-sync" onclick="sincronizarFreehire(false)" id="btn-sync" title="Consulta a API do Freehire para vagas remotas de .NET/C# e atualiza o radar">⚡ Sincronizar Todas Remotas</button>
   </div>
 
   ${radarVagas.length > 0 ? `
@@ -309,32 +328,40 @@ function gerarHTML(): string {
       rows.forEach(r => {
         if (tipo === 'todas') {
           r.style.display = '';
+        } else if (tipo === 'freelance') {
+          r.style.display = r.classList.contains('is-freelance') ? '' : 'none';
         } else {
           r.style.display = r.classList.contains('status-' + tipo) ? '' : 'none';
         }
       });
     }
 
-    async function sincronizarFreehire() {
-      const btn = document.getElementById('btn-sync');
+    async function sincronizarFreehire(apenasFreelance = false) {
+      const btnId = apenasFreelance ? 'btn-sync-freelance' : 'btn-sync';
+      const btn = document.getElementById(btnId);
       if (!btn) return;
       btn.disabled = true;
+      const textoOriginal = btn.innerText;
       btn.innerText = '⏳ Consultando Freehire...';
       try {
-        const resp = await fetch('/api/freehire/sync', { method: 'POST' });
+        const resp = await fetch('/api/freehire/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apenasFreelance })
+        });
         const data = await resp.json();
         if (data.sucesso) {
-          mostrarToast('✅ ' + data.adicionadasRadar + ' nova(s) vaga(s) com alto match adicionada(s) ao Radar!');
+          mostrarToast('✅ ' + data.adicionadasRadar + ' vaga(s) com alto match adicionada(s) ao Radar!');
           setTimeout(() => location.reload(), 1500);
         } else {
           mostrarToast('Erro ao sincronizar: ' + (data.erro || 'Falha'));
           btn.disabled = false;
-          btn.innerText = '⚡ Sincronizar Vagas Remotas (.NET Internacional)';
+          btn.innerText = textoOriginal;
         }
       } catch (err) {
         mostrarToast('Erro ao conectar ao servidor: ' + err.message);
         btn.disabled = false;
-        btn.innerText = '⚡ Sincronizar Vagas Remotas (.NET Internacional)';
+        btn.innerText = textoOriginal;
       }
     }
 
@@ -373,19 +400,31 @@ export function iniciarDashboard(port: number): void {
 
     // Rota da API para sincronizar vagas do Freehire
     if (req.method === 'POST' && req.url === '/api/freehire/sync') {
-      try {
-        const perfil = carregarPerfilDashboard();
-        const resultado = await sincronizarFreehireNoRadar(
-          { query: 'dotnet', work_mode: 'remote', seniority: 'senior', limit: 15 },
-          perfil,
-          6
-        );
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ sucesso: true, ...resultado }));
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ sucesso: false, erro: String(err) }));
-      }
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const dados = body ? (JSON.parse(body) as { apenasFreelance?: boolean; termo?: string }) : {};
+          const apenasFreelance = Boolean(dados.apenasFreelance);
+          const perfil = carregarPerfilDashboard();
+          const resultado = await sincronizarFreehireNoRadar(
+            {
+              query: dados.termo || 'dotnet',
+              work_mode: 'remote',
+              seniority: 'senior',
+              apenasFreelance,
+              limit: 15,
+            },
+            perfil,
+            5
+          );
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ sucesso: true, ...resultado }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ sucesso: false, erro: String(err) }));
+        }
+      });
       return;
     }
 
