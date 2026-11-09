@@ -68,3 +68,4 @@ flowchart TD
    - Se `REQUER_APROVACAO=true`, o agente só abre formulários de vagas com status `aprovado`.
    - Lê as respostas-base em `config/respostas.json` e dados do `config/perfil.json`.
    - Preenche os campos, anexa o PDF e passa pelo gate de segurança `confirmar_envio`.
+

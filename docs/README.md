@@ -31,3 +31,4 @@ Sistema autônomo e inteligente para busca, pontuação, filtragem e candidatura
 
 3. [**Histórico de Customizações e Evolução**](file:///c:/Users/claud/repos/pessoal/auto-apply-bot/docs/historico-de-mudancas.md)
    - Tudo o que foi adaptado e desenvolvido a partir do repositório original.
+

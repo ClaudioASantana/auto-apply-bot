@@ -42,3 +42,4 @@ Registro de todas as alterações arquiteturais, melhorias e novas funcionalidad
   - Filtro por `countries=br` e detecção de língua (`posting_language: pt`).
   - Proteção eliminatória em `src/scoring.ts`: vagas que exigem inglês fluente ou avançado são automaticamente descartadas caso o candidato não tenha a fluência declarada.
   - Botão dedicado `[🇧🇷 Sincronizar Vagas Brasil (PT-BR)]` e aba de filtro `[🇧🇷 Apenas PT-BR]`.
+

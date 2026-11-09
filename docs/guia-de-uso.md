@@ -89,3 +89,4 @@ LIMITE_DIARIO=10        # Máximo de candidaturas por dia
 PORTA_DASHBOARD=3000    # Porta do painel web
 CHROME_CDP_URL=http://127.0.0.1:9222
 ```
+
