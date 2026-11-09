@@ -163,8 +163,8 @@ describe('Integracao Freehire.me', () => {
     expect(res.adicionadasRadar).toBe(1);
     expect(registrarSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        plataforma: expect.stringContaining('[Freelance]'),
-        descricao_resumo: expect.stringContaining('FREELANCE/CONTRATO'),
+        plataforma: expect.stringContaining('[PJ/Freelance]'),
+        descricao_resumo: expect.stringContaining('FREELANCE/PJ'),
       })
     );
 

@@ -610,6 +610,10 @@ export const customToolDeclarations: FunctionDeclaration[] = [
           type: Type.BOOLEAN,
           description: 'Se verdadeiro, filtra apenas contratos por projeto, freelance ou B2B. Padrao: false.',
         },
+        apenas_ptbr: {
+          type: Type.BOOLEAN,
+          description: 'Se verdadeiro, filtra apenas vagas em Portugues (Brasil). Padrao: true.',
+        },
       },
     },
   },
@@ -1278,11 +1282,12 @@ export function criarExecutorDeTools(perfil: Perfil, config: AgenteConfig) {
         const work_mode = (args.work_mode as 'remote' | 'hybrid' | 'onsite') || 'remote';
         const seniority = (args.seniority as 'senior' | 'mid' | 'junior' | 'lead') || 'senior';
         const apenasFreelance = Boolean(args.apenas_freelance);
+        const apenasPtBr = args.apenas_ptbr !== false; // padrão true para proteger contra outras línguas
         const limite = Math.min((args.limite as number) || 10, 30);
 
         try {
           const resultado = await sincronizarFreehireNoRadar(
-            { query: termo, work_mode, seniority, apenasFreelance, limit: limite },
+            { query: termo, work_mode, seniority, apenasFreelance, apenasPtBr, limit: limite },
             perfil,
             config.scoreMinimo || 6
           );

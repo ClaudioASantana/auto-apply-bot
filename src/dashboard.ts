@@ -66,16 +66,24 @@ function gerarHTML(): string {
   const pendentesCount = radarVagas.filter(v => v.status_aprovacao === 'pendente' && v.score >= 6).length;
   const aprovadasCount = radarVagas.filter(v => v.status_aprovacao === 'aprovado').length;
   const freelanceCount = radarVagas.filter(v =>
-    (v.plataforma && v.plataforma.includes('Freelance')) ||
-    (v.descricao_resumo && (v.descricao_resumo.includes('FREELANCE') || v.descricao_resumo.includes('/h') || v.descricao_resumo.includes('B2B')))
+    (v.plataforma && (v.plataforma.includes('Freelance') || v.plataforma.includes('PJ'))) ||
+    (v.descricao_resumo && (v.descricao_resumo.includes('FREELANCE') || v.descricao_resumo.includes('/h') || v.descricao_resumo.includes('B2B') || v.descricao_resumo.includes('PJ')))
+  ).length;
+  const ptbrCount = radarVagas.filter(v =>
+    (v.plataforma && (v.plataforma.includes('PT-BR') || v.plataforma.includes('Gupy') || v.plataforma.includes('Infojobs'))) ||
+    (v.descricao_resumo && v.descricao_resumo.includes('PT-BR'))
   ).length;
   const totalRadar = radarVagas.length;
 
   const linhasRadar = radarVagas.map(v => {
     const scoreClass = v.score >= 7 ? 'high' : v.score >= 5 ? 'mid' : 'low';
     const ehFreelance =
-      (v.plataforma && v.plataforma.includes('Freelance')) ||
-      (v.descricao_resumo && (v.descricao_resumo.includes('FREELANCE') || v.descricao_resumo.includes('/h') || v.descricao_resumo.includes('B2B')));
+      (v.plataforma && (v.plataforma.includes('Freelance') || v.plataforma.includes('PJ'))) ||
+      (v.descricao_resumo && (v.descricao_resumo.includes('FREELANCE') || v.descricao_resumo.includes('/h') || v.descricao_resumo.includes('B2B') || v.descricao_resumo.includes('PJ')));
+
+    const ehPtBr =
+      (v.plataforma && (v.plataforma.includes('PT-BR') || v.plataforma.includes('Gupy') || v.plataforma.includes('Infojobs'))) ||
+      (v.descricao_resumo && v.descricao_resumo.includes('PT-BR'));
 
     let acoesHtml = '';
 
@@ -100,13 +108,15 @@ function gerarHTML(): string {
 
     const motivoHtml = v.motivo_pulo ? `<div class="sub-info" style="color: #f87171;">${escaparHtml(v.motivo_pulo)}</div>` : '';
     const resumoHtml = v.descricao_resumo ? `<div class="sub-info" style="color: #94a3b8; margin-top: 4px;">${escaparHtml(v.descricao_resumo)}</div>` : '';
-    const tagFreelance = ehFreelance ? `<span class="badge badge-freelance">Freelance/B2B</span>` : '';
+    const tagPtBr = ehPtBr ? `<span class="badge badge-ptbr">🇧🇷 PT-BR</span>` : '';
+    const tagFreelance = ehFreelance ? `<span class="badge badge-freelance">Freelance/PJ</span>` : '';
 
     return `
-      <tr class="radar-row status-${v.status_aprovacao} ${ehFreelance ? 'is-freelance' : ''}">
+      <tr class="radar-row status-${v.status_aprovacao} ${ehFreelance ? 'is-freelance' : ''} ${ehPtBr ? 'is-ptbr' : ''}">
         <td>${escaparHtml(v.data_vista)}</td>
         <td>
           <span class="platform-tag">${escaparHtml(v.plataforma || 'Web')}</span>
+          ${tagPtBr}
           ${tagFreelance}
         </td>
         <td><strong>${escaparHtml(v.empresa || 'Empresa')}</strong></td>
@@ -190,16 +200,19 @@ function gerarHTML(): string {
   .btn-approve { background: #059669; color: #ffffff; }
   .btn-discard { background: #475569; color: #cbd5e1; }
   .btn-undo { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 4px 8px; font-size: 11px; }
-  .btn-sync { background: linear-gradient(135deg, #0284c7, #2563eb); color: #ffffff; padding: 8px 14px; font-size: 12px; font-weight: bold; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-  .btn-sync:hover { filter: brightness(1.1); }
+  .btn-brasil { background: linear-gradient(135deg, #059669, #10b981); color: #ffffff; padding: 8px 14px; font-size: 12px; font-weight: bold; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); margin-right: 8px; }
+  .btn-brasil:hover { filter: brightness(1.1); }
   .btn-freelance { background: linear-gradient(135deg, #7c3aed, #9333ea); color: #ffffff; padding: 8px 14px; font-size: 12px; font-weight: bold; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); margin-right: 8px; }
   .btn-freelance:hover { filter: brightness(1.1); }
+  .btn-sync { background: linear-gradient(135deg, #0284c7, #2563eb); color: #ffffff; padding: 8px 14px; font-size: 12px; font-weight: bold; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+  .btn-sync:hover { filter: brightness(1.1); }
 
   .badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-block; }
   .badge-approved { background: #064e3b; color: #6ee7b7; border: 1px solid #059669; }
   .badge-discarded { background: #1e293b; color: #64748b; border: 1px solid #334155; }
   .badge-applied { background: #1e3a8a; color: #93c5fd; border: 1px solid #2563eb; }
-  .badge-freelance { background: #4c1d95; color: #c4b5fd; border: 1px solid #7c3aed; margin-left: 6px; font-size: 11px; }
+  .badge-ptbr { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; margin-left: 4px; font-size: 11px; }
+  .badge-freelance { background: #4c1d95; color: #c4b5fd; border: 1px solid #7c3aed; margin-left: 4px; font-size: 11px; }
 
   .status { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
   .status.aplicado { background: #166534; color: #4ade80; }
@@ -245,12 +258,14 @@ function gerarHTML(): string {
 
   <div class="filter-bar">
     <button class="filter-btn active" onclick="filtrar('todas')">Todas (${totalRadar})</button>
+    <button class="filter-btn" onclick="filtrar('ptbr')">🇧🇷 Apenas PT-BR (${ptbrCount})</button>
     <button class="filter-btn" onclick="filtrar('pendente')">Aguardando Aprovação (${pendentesCount})</button>
+    <button class="filter-btn" onclick="filtrar('freelance')">💼 Freelance / PJ (${freelanceCount})</button>
     <button class="filter-btn" onclick="filtrar('aprovado')">Aprovadas (${aprovadasCount})</button>
-    <button class="filter-btn" onclick="filtrar('freelance')">💼 Freelance / B2B (${freelanceCount})</button>
     <div style="flex: 1;"></div>
-    <button class="btn btn-freelance" onclick="sincronizarFreehire(true)" id="btn-sync-freelance" title="Busca contratos freelance / B2B de .NET no Freehire">💼 Sincronizar Freelance (.NET)</button>
-    <button class="btn btn-sync" onclick="sincronizarFreehire(false)" id="btn-sync" title="Consulta a API do Freehire para vagas remotas de .NET/C# e atualiza o radar">⚡ Sincronizar Todas Remotas</button>
+    <button class="btn btn-brasil" onclick="sincronizarFreehire({ apenasBrasil: true, apenasPtBr: true })" id="btn-sync-brasil" title="Busca vagas no Brasil e em Português (Gupy, Greenhouse, etc.)">🇧🇷 Sincronizar Vagas Brasil (PT-BR)</button>
+    <button class="btn btn-freelance" onclick="sincronizarFreehire({ apenasFreelance: true, apenasBrasil: true })" id="btn-sync-freelance" title="Busca contratos freelance e PJ no Brasil">💼 Sincronizar PJ/Freelance BR</button>
+    <button class="btn btn-sync" onclick="sincronizarFreehire({ apenasPtBr: true })" id="btn-sync" title="Busca vagas remotas">⚡ Sincronizar Remotas</button>
   </div>
 
   ${radarVagas.length > 0 ? `
@@ -328,6 +343,8 @@ function gerarHTML(): string {
       rows.forEach(r => {
         if (tipo === 'todas') {
           r.style.display = '';
+        } else if (tipo === 'ptbr') {
+          r.style.display = r.classList.contains('is-ptbr') ? '' : 'none';
         } else if (tipo === 'freelance') {
           r.style.display = r.classList.contains('is-freelance') ? '' : 'none';
         } else {
@@ -336,8 +353,8 @@ function gerarHTML(): string {
       });
     }
 
-    async function sincronizarFreehire(apenasFreelance = false) {
-      const btnId = apenasFreelance ? 'btn-sync-freelance' : 'btn-sync';
+    async function sincronizarFreehire(opcoes = {}) {
+      const btnId = opcoes.apenasBrasil ? 'btn-sync-brasil' : (opcoes.apenasFreelance ? 'btn-sync-freelance' : 'btn-sync');
       const btn = document.getElementById(btnId);
       if (!btn) return;
       btn.disabled = true;
@@ -347,7 +364,7 @@ function gerarHTML(): string {
         const resp = await fetch('/api/freehire/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apenasFreelance })
+          body: JSON.stringify(opcoes)
         });
         const data = await resp.json();
         if (data.sucesso) {
@@ -404,8 +421,17 @@ export function iniciarDashboard(port: number): void {
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
         try {
-          const dados = body ? (JSON.parse(body) as { apenasFreelance?: boolean; termo?: string }) : {};
+          const dados = body
+            ? (JSON.parse(body) as {
+                apenasFreelance?: boolean;
+                apenasBrasil?: boolean;
+                apenasPtBr?: boolean;
+                termo?: string;
+              })
+            : {};
           const apenasFreelance = Boolean(dados.apenasFreelance);
+          const apenasBrasil = Boolean(dados.apenasBrasil);
+          const apenasPtBr = dados.apenasPtBr !== false;
           const perfil = carregarPerfilDashboard();
           const resultado = await sincronizarFreehireNoRadar(
             {
@@ -413,7 +439,9 @@ export function iniciarDashboard(port: number): void {
               work_mode: 'remote',
               seniority: 'senior',
               apenasFreelance,
-              limit: 15,
+              apenasBrasil,
+              apenasPtBr,
+              limit: 20,
             },
             perfil,
             5

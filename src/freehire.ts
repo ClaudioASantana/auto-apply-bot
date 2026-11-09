@@ -13,10 +13,13 @@ export interface FreehireJobItem {
   work_mode?: string;
   skills?: string[];
   engagement?: string[];
+  countries?: string[];
   enrichment?: {
     summary?: string;
     seniority?: string;
     employment_type?: string;
+    posting_language?: string;
+    english_level?: string;
     salary_min?: number;
     salary_max?: number;
     salary_currency?: string;
@@ -30,6 +33,9 @@ export interface FreehireFiltros {
   work_mode?: 'remote' | 'hybrid' | 'onsite';
   seniority?: 'senior' | 'mid' | 'junior' | 'lead';
   employment_type?: 'contract' | 'freelance' | 'full_time' | 'part_time';
+  country?: string;
+  apenasBrasil?: boolean;
+  apenasPtBr?: boolean;
   apenasFreelance?: boolean;
   limit?: number;
 }
@@ -55,6 +61,11 @@ export async function buscarVagasFreehire(filtros: FreehireFiltros = {}): Promis
     url.searchParams.set('employment_type', filtros.employment_type);
   } else if (filtros.apenasFreelance) {
     url.searchParams.set('employment_type', 'contract');
+  }
+  if (filtros.country) {
+    url.searchParams.set('countries', filtros.country);
+  } else if (filtros.apenasBrasil || filtros.apenasPtBr) {
+    url.searchParams.set('countries', 'br');
   }
   url.searchParams.set('limit', String(filtros.limit ?? 15));
 
@@ -123,18 +134,42 @@ export async function sincronizarFreehireNoRadar(
       const reqs = (v.enrichment?.requirements || []).map(r => r.text).join('; ');
       const tecnologiasPedidas = [v.title, techs, reqs].filter(Boolean).join(' | ');
 
-      // Pontua vaga contra o perfil
+      // Identifica idioma da vaga
+      const ehBrasil = (v.countries || []).includes('br') || /brasil|brazil|s[aã]o paulo|rio de janeiro/i.test(v.location || '');
+      const postingLang = v.enrichment?.posting_language;
+      const ehPtBr = postingLang === 'pt' || ehBrasil || /[ãõáéíóúêç]/i.test(v.title + ' ' + (v.enrichment?.summary || ''));
+
+      // Se o filtro exigir apenas vagas em português e a vaga for em outro idioma
+      if (filtros.apenasPtBr && !ehPtBr) {
+        continue;
+      }
+
+      // Detecta nível de inglês exigido pela vaga
+      let idiomaExigido: string | undefined = undefined;
+      if (v.enrichment?.english_level) {
+        const el = v.enrichment.english_level.toLowerCase();
+        if (el === 'c1' || el === 'c2' || el === 'fluent') idiomaExigido = 'fluente';
+        else if (el === 'b2') idiomaExigido = 'avancado';
+        else if (el === 'b1') idiomaExigido = 'intermediario';
+        else if (el === 'a1' || el === 'a2') idiomaExigido = 'basico';
+      } else if (/\b(ingl[eê]s fluente|fluent english|english required|advanced english|english c1|english b2)\b/i.test(v.title + ' ' + reqs)) {
+        idiomaExigido = 'avancado';
+      }
+
+      // Pontua vaga contra o perfil (aplica eliminatório de idioma se vaga exigir inglês além do básico)
       const avaliacao = pontuarVaga(
         {
           tecnologias_pedidas: tecnologiasPedidas,
           senioridade: v.enrichment?.seniority || 'senior',
           modelo_trabalho: v.work_mode || 'remoto',
+          localizacao: v.location,
+          idioma_exigido: idiomaExigido,
         },
         {
           stackPrincipal: perfil.stack_principal || [],
           cidade: perfil.cidade || '',
           modelosAceitos: perfil.modelo_trabalho || ['remoto'],
-          nivelIngles: perfil.nivel_ingles,
+          nivelIngles: perfil.nivel_ingles || 'basico',
         },
         scoreMinimo
       );
@@ -145,28 +180,31 @@ export async function sincronizarFreehireNoRadar(
         v.enrichment?.employment_type === 'freelance' ||
         (v.engagement || []).includes('b2b') ||
         v.enrichment?.salary_period === 'hour' ||
-        /\b(freelance|contractor|b2b|fixed-term|short-term)\b/i.test(v.title + ' ' + (v.enrichment?.summary || ''));
+        /\b(freelance|contractor|b2b|fixed-term|short-term|pj)\b/i.test(v.title + ' ' + (v.enrichment?.summary || ''));
 
       // Formata faixa salarial e dados
       let salarioStr = '';
       if (v.enrichment?.salary_min || v.enrichment?.salary_max) {
         const min = v.enrichment.salary_min ?? '';
         const max = v.enrichment.salary_max ?? '';
-        const moeda = v.enrichment.salary_currency ?? 'USD';
+        const moeda = v.enrichment.salary_currency ?? (ehBrasil ? 'BRL' : 'USD');
         const periodo = v.enrichment.salary_period ?? (ehFreelance ? 'h' : 'mês');
         salarioStr = ` | Salário: ${min ? min : ''}${min && max ? ' - ' : ''}${max} ${moeda}/${periodo}`;
       }
 
-      const tagFreelance = ehFreelance ? '[FREELANCE/CONTRATO] ' : '';
+      const tagIdioma = ehPtBr ? '[PT-BR] ' : '';
+      const tagFreelance = ehFreelance ? '[FREELANCE/PJ] ' : '';
       const modoTrabalho = v.work_mode ? `[${v.work_mode.toUpperCase()}] ` : '';
       const localizacao = v.location ? `(${v.location})` : '';
-      const resumo = `${tagFreelance}${modoTrabalho}${localizacao}${salarioStr} ${v.enrichment?.summary || ''}`.trim();
+      const resumo = `${tagIdioma}${tagFreelance}${modoTrabalho}${localizacao}${salarioStr} ${v.enrichment?.summary || ''}`.trim();
+
+      const plataformaLabel = `Freehire (${v.source || 'ATS'})${ehPtBr ? ' [PT-BR]' : ''}${ehFreelance ? ' [PJ/Freelance]' : ''}`;
 
       const gravou = registrarVagaVista({
         url: urlLimpa,
         titulo_vaga: v.title,
         empresa: v.company || 'Confidencial',
-        plataforma: `Freehire (${v.source || 'ATS'})${ehFreelance ? ' [Freelance]' : ''}`,
+        plataforma: plataformaLabel,
         score: avaliacao.score,
         motivo_pulo: avaliacao.veredicto === 'PULAR' ? avaliacao.motivo : undefined,
         status_aprovacao: avaliacao.score >= scoreMinimo ? 'pendente' : 'descartado',
